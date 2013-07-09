@@ -23,20 +23,8 @@ References:
 
 var fs = require('fs');
 var program = require('commander');
-var sys = require('util');		// CZ
-var rest = require('./restler'); 	// CZ, or var rest = require('restler');
 var cheerio = require('cheerio');
-var HTMLFILE_DEFAULT = "index.html";
-var CHECKSFILE_DEFAULT = "checks.json";
-
-var assertFileExists = function(infile) {
-    var instr = infile.toString();
-    if(!fs.existsSync(instr)) {
-        console.log("%s does not exist. Exiting.", instr);
-        process.exit(1); // http://nodejs.org/api/process.html#process_process_exit_code
-    }
-    return instr;
-};
+var rest = require('restler');
 
 var cheerioHtmlFile = function(htmlfile) {
     return cheerio.load(fs.readFileSync(htmlfile));
@@ -57,35 +45,39 @@ var checkHtmlFile = function(htmlfile, checksfile) {
     return out;
 };
 
-var clone = function(fn) {
-    // Workaround for commander.js issue.
-    // http://stackoverflow.com/a/6772648
-    return fn.bind({});
-};
-							//CZ funtion
-var convertUrlToFile = function(url) {
-    rest.get(url).on('complete', function(result) {
-  	if (result instanceof Error) {
-	    sys.puts('Error: ' + result.message);
-	    this.retry(5000); // try again after 5 sec
-        } else {
-	    sys.puts(result);
-	}
-    });
+var checkUrlFile = function(urlfile, checksfile) {
+     rest.get(urlfile).on('complete', function(result) {
+        $ = cheerio.load(result);
+        var checks = loadChecks(checksfile).sort();
+        var out = {};
+        for(var ii in checks) {
+           var present = $(checks[ii]).length > 0;
+           out[checks[ii]] = present;
+        }
+        var outJson = JSON.stringify(out, null, 4);
+        console.log(outJson);
+        return;
+     });
 };
 
-// When a file is run directly from Node, require.main is set to its module
-// (require.main == module) For a file foo.js, this will be true if run via node foo.js, but false if run by require('./foo'). 
 if(require.main == module) {
     program
-        .option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists), HTMLFILE_DEFAULT)
-        .option('-c, --checks <check_file>', 'Path to checks.json', clone(assertFileExists), CHECKSFILE_DEFAULT)
+        .option('-c, --checks <check_file>', 'Path to checks.json')
+        .option('-f, --file <html_file>', 'Path to index.html')
+        .option('-u, --url <url_file>', 'url to check')
         .parse(process.argv);
-    var urlFile = convertUrlToFile(program.file); 			//CZ
-//    var checkJson = checkHtmlFile(program.file, program.checks);	//CZ commented
-    var checkJson = checkHtmlFile(urlFile, program.checks);
-    var outJson = JSON.stringify(checkJson, null, 4);
-    console.log(outJson);
+    var checkJson = null;
+    if (program.url)
+    {
+        checkJson = checkUrlFile(program.url, program.checks);
+    }
+    else if (program.file)
+    {
+        checkJson = checkHtmlFile(program.file, program.checks);
+        var outJson = JSON.stringify(checkJson, null, 4);
+        console.log(outJson);
+    }
 } else {
     exports.checkHtmlFile = checkHtmlFile;
 }
+
